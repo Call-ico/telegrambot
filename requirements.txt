@@ -1,0 +1,7 @@
+aiogram
+pyTelegramBotAPI
+jinja2
+selenium
+webdriver-manager
+beautifulsoup4
+aiohttp 

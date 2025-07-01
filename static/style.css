@@ -1,0 +1,370 @@
+body {
+  margin: 0;
+  height: 100vh;
+  background: linear-gradient(135deg, #0a0f11, #131c22, #1a262d);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-family: Arial, sans-serif;
+  overflow: hidden;
+}
+
+.glass {
+  width: 470px;
+  height: 700px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
+  backdrop-filter: blur(15px);
+  -webkit-backdrop-filter: blur(15px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: white;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 20px;
+  position: relative;
+  overflow: hidden;
+  gap: 16px;
+}
+
+.name-flag {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.name-flag img {
+  width: 60px;
+  height: 30px;
+  border-radius: 4px;
+}
+
+.name-flag span {
+  font-size: 36px;
+  font-weight: 900;
+  color: white;
+  text-shadow: 2px 2px 5px rgba(0, 0, 0, 0.6);
+  max-width: 250px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rank-rating {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.rank-rating img {
+  width: 80px;
+  height: 35px;
+}
+
+.rank-rating span {
+  font-size: 32px;
+  font-weight: 900;
+  color: white;
+  text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+}
+
+.k-kda {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.k-box {
+  width: 72px;
+  height: 36px;
+  background: linear-gradient(to bottom, #5c2e0d, #3a1c05);
+  border: 2px solid #f3b544;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: 900;
+  color: #f3b544;
+  font-family: Arial, sans-serif;
+  box-shadow: inset 0 0 3px rgba(0,0,0,0.5);
+}
+
+.kda {
+  font-size: 24px;
+  font-weight: bold;
+  color: white;
+  font-family: Arial, sans-serif;
+  text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.5);
+}
+
+.progress-circle {
+  width: 150px;
+  height: 150px;
+  position: absolute;
+  top: 200px;
+  right: 20px;
+  margin: 0;
+}
+
+.progress-circle svg {
+  width: 100%;
+  height: 100%;
+  filter: drop-shadow(0 0 10px rgba(76, 217, 100, 0.3));
+}
+
+.progress-ring {
+  transition: stroke-dashoffset 1.5s ease-in-out;
+}
+
+.progress-text {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 28px;
+  font-weight: 600;
+  color: white;
+  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.6);
+  z-index: 10;
+}
+
+.extra-stats {
+  font-size: 14px;
+  color: white;
+  width: 100%;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.extra-stats p {
+  margin: 6px 0;
+  line-height: 1.4;
+}
+
+.status-icon {
+  width: 40x;
+  height: 20px;
+  vertical-align: middle;
+  margin-left: 5px;
+  border-radius: 2px;
+}
+
+.last-games {
+  font-size: 14px;
+  color: white;
+  width: 100%;
+  margin-top: 10px;
+}
+
+.last-games h3 {
+  font-size: 18px;
+  margin-bottom: 12px;
+  color: #f3b544;
+  text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.5);
+}
+
+.game-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  margin-bottom: 6px;
+  transition: all 0.3s ease;
+}
+
+.game-row:hover {
+  background: rgba(255, 255, 255, 0.08);
+  transform: translateX(2px);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+}
+
+.game-row.win {
+  background: rgba(76, 217, 100, 0.12);
+  border-color: rgba(76, 217, 100, 0.18);
+}
+
+.game-row.lose {
+  background: rgba(231, 76, 60, 0.12);
+  border-color: rgba(231, 76, 60, 0.18);
+}
+
+.hero-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  object-fit: cover;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+}
+
+.game-mode {
+  font-size: 18px;
+  color: #f3b544;
+  font-weight: bold;
+  min-width: 60px;
+  text-align: center;
+}
+
+.game-time {
+  font-size: 18px;
+  color: #87ceeb;
+  min-width: 80px;
+  text-align: center;
+}
+
+.game-score {
+  font-size: 12px;
+  color: white;
+  font-weight: bold;
+  min-width: 60px;
+  text-align: center;
+}
+
+.game-score.positive {
+  color: #7cb342;
+}
+
+.game-score.negative {
+  color: #e57373;
+}
+
+.game-kda {
+  font-size: 18px;
+  color: #b0e57c;
+  min-width: 110px;
+  text-align: center;
+  font-family: monospace;
+  white-space: nowrap;
+  padding: 4px 10px;
+}
+
+.game-kda .kills,
+.game-kda .deaths,
+.game-kda .assists {
+  font-size: 20px;
+  font-weight: bold;
+  padding: 0 2px;
+}
+
+.game-kda .kills {
+  color: #4a7c59;
+}
+
+.game-kda .deaths {
+  color: #c62828;
+}
+
+.game-kda .assists {
+  color: #87ceeb;
+}
+
+.error-message {
+  color: #ff6b6b;
+  font-weight: bold;
+  background: rgba(255, 107, 107, 0.1);
+  padding: 12px;
+  border-radius: 8px;
+  margin-top: 12px;
+  text-align: center;
+  border: 1px solid rgba(255, 107, 107, 0.3);
+}
+
+.best-hero-block {
+  position: absolute;
+  top: 65px;
+  left: 280px;
+  width: 177px;
+  height: 109px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  backdrop-filter: blur(5px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.top-hero {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.top-hero h4 {
+  position: absolute;
+  top: 2px;
+  left: 5px;
+  width: 100%;
+  font-size: 12px;
+  color: #f3b544;
+  text-align: center;
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
+  font-weight: bold;
+  margin: 0;
+}
+
+.hero-portrait {
+  position: absolute;
+  top: 20px;
+  left: 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.hero-portrait img {
+  width: 55px;
+  height: 45px;
+  border-radius: 16px;
+  object-fit: cover;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.hero-portrait span {
+  font-size: 14px;
+  color: white;
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 70px;
+  font-weight: 500;
+}
+
+.top-hero p {
+  position: absolute;
+  bottom: -2px;
+  left: 0;
+  width: 100%;
+  font-size: 13px;
+  color: white;
+  text-align: center;
+  line-height: 1.4;
+  background: rgba(0, 0, 0, 0.2);
+  padding: 4px 6px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  margin: 0;
+}
+
+.top-hero p b {
+  color: #f3b544;
+  font-weight: bold;
+}
+
+.hero-name {
+  font-size: 13px;
+  color: white;
+  font-weight: 500;
+  min-width: 90px;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

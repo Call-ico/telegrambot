@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <title>Статистика ICCup</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div class="glass">
+
+<!-- Имя + Флаг + элитка -->
+    <div class="name-flag">
+      <img src="{{ data['Флаг'] }}" alt="Флаг">
+      <span>{{ data['Имя'] }}</span>
+
+      {% if data["Элитный"] %}
+        <img src="{{ url_for('static', filename='elite.png') }}" alt="Элитка">
+      {% endif %}
+    </div>
+
+    <!-- Ранг + Рейтинг -->
+    <div class="rank-rating">
+      <img src="{{ url_for('static', filename='ranks/' + data['РангБуква'] + '.jpg') }}" alt="{{ data['РангБуква'] }}">
+      <span>{{ data['Рейтинг'] }}</span>
+    </div>
+
+    <!-- Блок лучшего героя -->
+    <div class="best-hero-block">
+      <div class="top-hero">
+        <h4>Лучший герой</h4>
+        <div class="hero-portrait">
+          {% if data.get('Лучший герой') %}
+            {% if data['Лучший герой'].get('image') %}
+              <img src="{{ data['Лучший герой']['image'] }}" 
+                   alt="{{ data['Лучший герой']['name'] }}" 
+                   title="{{ data['Лучший герой']['name'] }}" 
+                   height="24" width="24" border="0">
+            {% endif %}
+            <span>{{ data['Лучший герой']['name'] }}</span>
+          {% endif %}
+        </div>
+        <p>коэффициент крутости: <b>{{ data.get('Лучший герой', {}).get('k_coefficient', 'N/A') }}</b></p>
+      </div>
+    </div>
+
+    <!-- K + KDA -->
+    <div class="k-kda">
+      <div class="k-box">K {{ data['Крутость'] }}</div>
+      <div class="kda">{{ data["K/D/A"] }}</div>
+    </div>
+
+    <!-- Прогресс круг -->
+    <div class="progress-circle">
+      <svg width="150" height="150" viewBox="0 0 150 150">
+        <!-- Фоновая окружность -->
+        <circle cx="75" cy="75" r="60" fill="none" stroke="rgba(255,255,255,0.2)" stroke-width="12"/>
+        <!-- Прогрессовая окружность -->
+        <circle cx="75" cy="75" r="60" fill="none" stroke="url(#gradient)" stroke-width="12" 
+                stroke-linecap="round" stroke-dasharray="376.8" stroke-dashoffset="376.8" 
+                transform="rotate(-90 75 75)" class="progress-ring"/>
+        <!-- Градиент -->
+        <defs>
+          <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" style="stop-color:#4cd964;stop-opacity:1" />
+            <stop offset="100%" style="stop-color:#2ecc71;stop-opacity:1" />
+          </linearGradient>
+        </defs>
+      </svg>
+      <div class="progress-text">
+        {{ data["Победы %"] }}%
+      </div>
+    </div>
+
+    <!-- Общая статистика -->
+    <div class="extra-stats">
+      <p><b>Win/Lose/Leave:</b> {{ data["Победы / Поражения / Ливы"] }}</p>
+      <p><b>Лучший счёт:</b> {{ data["Лучший счет"] }}</p>
+      <p><b>Макс. стрик побед:</b> {{ data["Макс. стрик побед"] }}</p>
+      <p><b>Текущий стрик:</b> {{ data["Текущий стрик"] }}</p>
+      <p><b>Онлайн:</b> 
+        {% if data["Онлайн"] == "online" %}
+          <img src="{{ url_for('static', filename='online.png') }}" alt="Online" class="status-icon">
+        {% elif data["Онлайн"] == "offline" %}
+          <img src="{{ url_for('static', filename='offline.png') }}" alt="Offline" class="status-icon">
+        {% else %}
+          <img src="{{ url_for('static', filename='unknown.png') }}" alt="Unknown" class="status-icon">
+        {% endif %}
+      </p>
+    </div>
+
+    <!-- Последние игры -->
+    <div class="last-games">
+      <h3>Последние игры</h3>
+      {% for game in data["Последние игры"] %}
+        <div class="game-row {% if game.result == 'win' %}win{% elif game.result == 'lose' %}lose{% endif %}">
+          <img src="{{ game.hero_img }}" alt="{{ game.hero_name }}" class="hero-icon">
+          <span class="hero-name">{{ game.hero_name }}</span>
+          <span class="game-mode">{{ game.mode }}</span>
+          <span class="game-time">{{ game.time }}</span>
+          <span class="game-kda">
+            {% set kda_parts = game.kda.split('/') %}
+            {% if kda_parts|length >= 3 %}
+              <span class="kills">{{ kda_parts[0] }}</span> / <span class="deaths">{{ kda_parts[1] }}</span> / <span class="assists">{{ kda_parts[2] }}</span>
+            {% else %}
+              {{ game.kda }}
+            {% endif %}
+          </span>
+        </div>
+      {% endfor %}
+    </div>
+
+    <!-- Ошибка -->
+    {% if data['Ошибка'] %}
+      <div class="error-message">
+        {{ data['Ошибка'] }}
+      </div>
+    {% endif %}
+
+  </div>
+
+  <script>
+    // Динамический расчет прогресс-круга
+    document.addEventListener('DOMContentLoaded', function() {
+      const progressText = document.querySelector('.progress-text');
+      const progressRing = document.querySelector('.progress-ring');
+      const winPercentage = parseFloat(progressText.textContent.replace('%', ''));
+      
+      if (!isNaN(winPercentage)) {
+        const circumference = 2 * Math.PI * 60; // 2πr, где r=60
+        const offset = circumference - (winPercentage / 100) * circumference;
+        progressRing.style.strokeDashoffset = offset;
+      }
+    });
+  </script>
+</body>
+</html>
