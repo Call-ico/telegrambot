@@ -6,14 +6,8 @@ from config import TELEGRAM_TOKEN
 import jinja2
 from pparser import fetch_iccup_stats_async
 import asyncio
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from webdriver_manager.chrome import ChromeDriverManager
-from selenium.webdriver.chrome.service import Service
 from telebot import types
+from playwright.sync_api import sync_playwright
 
 jinja_env = jinja2.Environment(
     loader=jinja2.FileSystemLoader('templates'),
@@ -22,13 +16,10 @@ jinja_env = jinja2.Environment(
 
 stats_cache = {}
 CACHE_TTL = 60
-CHROME_DRIVER_PATH = None
-
-def ensure_chrome_driver():
-    global CHROME_DRIVER_PATH
-    if CHROME_DRIVER_PATH is None:
-        CHROME_DRIVER_PATH = ChromeDriverManager().install()
-    return CHROME_DRIVER_PATH
+MAX_TEXT_LENGTH = 32  # лимит символов для никнейма и команд
+RATE_LIMIT_SECONDS = 1  # лимит частоты запросов (секунд)
+user_last_request_time = {}
+waiting_for_nickname = {}
 
 def get_cached_stats(nickname):
     now = time.time()
@@ -48,60 +39,91 @@ def render_stats_html(stats_data):
     jinja_env.globals['url_for'] = lambda endpoint, filename: fake_url_for_static(filename) if endpoint == 'static' else ''
     return template.render(data=stats_data)
 
-def setup_webdriver():
-    chrome_options = Options()
-    chrome_options.add_argument('--headless')
-    chrome_options.add_argument('--no-sandbox')
-    chrome_options.add_argument('--disable-dev-shm-usage')
-    chrome_options.add_argument('--window-size=800,1200')
-    chrome_options.add_argument('--disable-gpu')
-    chrome_options.add_argument('--disable-web-security')
-    chrome_options.add_argument('--allow-running-insecure-content')
-    driver_path = ensure_chrome_driver()
-    service = Service(driver_path)
-    driver = webdriver.Chrome(service=service, options=chrome_options)
-    return driver
-
 def take_screenshot(html_content):
-    driver = setup_webdriver()
-    try:
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.html', delete=False, encoding='utf-8') as f:
-            f.write(html_content)
-            temp_file = f.name
-        driver.get(f"file://{temp_file}")
-        WebDriverWait(driver, 5).until(
-            EC.presence_of_element_located((By.CLASS_NAME, "glass"))
-        )
-        glass_element = driver.find_element(By.CLASS_NAME, "glass")
-        screenshot = glass_element.screenshot_as_png
-        os.unlink(temp_file)
-        return screenshot
-    finally:
-        driver.quit()
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.html', delete=False, encoding='utf-8') as f:
+        f.write(html_content)
+        temp_file = f.name
+    screenshot = None
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True, args=[
+            '--no-sandbox',
+            '--disable-dev-shm-usage',
+            '--window-size=800,1200',
+            '--disable-gpu',
+            '--disable-web-security',
+            '--allow-running-insecure-content',
+        ])
+        page = browser.new_page(viewport={"width": 800, "height": 1200})
+        page.goto(f"file://{temp_file}")
+        page.wait_for_selector('.glass', timeout=5000)
+        glass_element = page.query_selector('.glass')
+        screenshot = glass_element.screenshot(type='png')
+        browser.close()
+    os.unlink(temp_file)
+    return screenshot
 
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
 def main_keyboard():
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    keyboard.row('Статистика', 'F.A.Q.')
-    keyboard.row('🛠 Техническая поддержка', 'Конкурсы')
+    keyboard.row('📈 Статистика игроков', '❓ FAQ')
+    keyboard.row('🛠 Техническая поддержка', '🎉 Конкурсы')
     keyboard.row('Вакансии', 'Beta Star Lauchner')
     return keyboard
+def is_rate_limited(user_id):
+    now = time.time()
+    last_time = user_last_request_time.get(user_id, 0)
+    if now - last_time < RATE_LIMIT_SECONDS:
+        return True
+    user_last_request_time[user_id] = now
+    return False
 
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
+    if not message.text:
+        bot.send_message(message.chat.id, "❌ Пожалуйста, используйте текстовые команды.")
+        return
+    if len(message.text) > MAX_TEXT_LENGTH:
+        bot.send_message(message.chat.id, f"❌ Сообщение слишком длинное (максимум {MAX_TEXT_LENGTH} символов).")
+        return
+    if is_rate_limited(message.from_user.id):
+        bot.send_message(message.chat.id, f"⏳ Пожалуйста, не отправляйте команды так часто. Подождите {RATE_LIMIT_SECONDS} секунд.")
+        return
     bot.send_message(
         message.chat.id,
         "Привет! Выберите действие:",
         reply_markup=main_keyboard()
     )
 
-@bot.message_handler(func=lambda m: m.text == 'Статистика')
+@bot.message_handler(func=lambda m: m.text == '📈 Статистика игроков')
 def handle_stats_button(message):
+    if not message.text:
+        bot.send_message(message.chat.id, "❌ Пожалуйста, выберите действие с помощью текстовой кнопки.")
+        return
+    if len(message.text) > MAX_TEXT_LENGTH:
+        bot.send_message(message.chat.id, f"❌ Сообщение слишком длинное (максимум {MAX_TEXT_LENGTH} символов).")
+        return
+    if is_rate_limited(message.from_user.id):
+        bot.send_message(message.chat.id, f"⏳ Пожалуйста, не отправляйте запросы так часто. Подождите {RATE_LIMIT_SECONDS} секунд.")
+        return
+    waiting_for_nickname[message.from_user.id] = True
     msg = bot.send_message(message.chat.id, "Введите никнейм для статистики:")
     bot.register_next_step_handler(msg, process_stats_nickname)
 
 def process_stats_nickname(message):
+    if not waiting_for_nickname.get(message.from_user.id):
+        bot.send_message(message.chat.id, "❌ Контекст запроса статистики утерян. Пожалуйста, нажмите '📈 Статистика игроков' ещё раз.")
+        return
+    waiting_for_nickname[message.from_user.id] = False
+    if not message.text:
+        bot.send_message(message.chat.id, "❌ Пожалуйста, отправьте никнейм текстом, а не файлом или другим типом сообщения.")
+        return
+    if len(message.text) > MAX_TEXT_LENGTH:
+        bot.send_message(message.chat.id, f"❌ Никнейм слишком длинный (максимум {MAX_TEXT_LENGTH} символов).")
+        return
+    if is_rate_limited(message.from_user.id):
+        bot.send_message(message.chat.id, f"⏳ Пожалуйста, не отправляйте запросы так часто. Подождите {RATE_LIMIT_SECONDS} секунд.")
+        return
     nickname = message.text.strip()
     msg = bot.send_message(message.chat.id, f"⏳ Получаю статистику для {nickname}...")
     try:
@@ -120,8 +142,17 @@ def process_stats_nickname(message):
     except Exception as e:
         bot.send_message(message.chat.id, f"❌ Произошла ошибка: {e}")
 
-@bot.message_handler(func=lambda m: m.text == 'F.A.Q.')
+@bot.message_handler(func=lambda m: m.text == '❓ FAQ')
 def handle_faq(message):
+    if not message.text:
+        bot.send_message(message.chat.id, "❌ Пожалуйста, выберите действие с помощью текстовой кнопки.")
+        return
+    if len(message.text) > MAX_TEXT_LENGTH:
+        bot.send_message(message.chat.id, f"❌ Сообщение слишком длинное (максимум {MAX_TEXT_LENGTH} символов).")
+        return
+    if is_rate_limited(message.from_user.id):
+        bot.send_message(message.chat.id, f"⏳ Пожалуйста, не отправляйте запросы так часто. Подождите {RATE_LIMIT_SECONDS} секунд.")
+        return
     with open('static/experimental.jpg', 'rb') as photo:
         bot.send_photo(message.chat.id, photo)
     bot.send_message(
@@ -148,6 +179,15 @@ def handle_faq(message):
 
 @bot.message_handler(func=lambda m: m.text == '🛠 Техническая поддержка')
 def handle_support(message):
+    if not message.text:
+        bot.send_message(message.chat.id, "❌ Пожалуйста, выберите действие с помощью текстовой кнопки.")
+        return
+    if len(message.text) > MAX_TEXT_LENGTH:
+        bot.send_message(message.chat.id, f"❌ Сообщение слишком длинное (максимум {MAX_TEXT_LENGTH} символов).")
+        return
+    if is_rate_limited(message.from_user.id):
+        bot.send_message(message.chat.id, f"⏳ Пожалуйста, не отправляйте запросы так часто. Подождите {RATE_LIMIT_SECONDS} секунд.")
+        return
     bot.send_message(
         message.chat.id,
         "Для получения более подробной и индивидуальной помощи обращайтесь в <a href='https://iccup.com/support_user/cat_ask/35.html'>раздел на сайте</a> .\n\n"
@@ -172,8 +212,17 @@ def handle_support(message):
         parse_mode='HTML'
     )
 
-@bot.message_handler(func=lambda m: m.text == 'Конкурсы')
+@bot.message_handler(func=lambda m: m.text == '🎉 Конкурсы')
 def handle_contests(message):
+    if not message.text:
+        bot.send_message(message.chat.id, "❌ Пожалуйста, выберите действие с помощью текстовой кнопки.")
+        return
+    if len(message.text) > MAX_TEXT_LENGTH:
+        bot.send_message(message.chat.id, f"❌ Сообщение слишком длинное (максимум {MAX_TEXT_LENGTH} символов).")
+        return
+    if is_rate_limited(message.from_user.id):
+        bot.send_message(message.chat.id, f"⏳ Пожалуйста, не отправляйте запросы так часто. Подождите {RATE_LIMIT_SECONDS} секунд.")
+        return
     bot.send_message(
         message.chat.id,
         "🎮 DISCORD:\n"
@@ -199,6 +248,15 @@ def handle_contests(message):
 
 @bot.message_handler(func=lambda m: m.text == 'Вакансии')
 def handle_jobs(message):
+    if not message.text:
+        bot.send_message(message.chat.id, "❌ Пожалуйста, выберите действие с помощью текстовой кнопки.")
+        return
+    if len(message.text) > MAX_TEXT_LENGTH:
+        bot.send_message(message.chat.id, f"❌ Сообщение слишком длинное (максимум {MAX_TEXT_LENGTH} символов).")
+        return
+    if is_rate_limited(message.from_user.id):
+        bot.send_message(message.chat.id, f"⏳ Пожалуйста, не отправляйте запросы так часто. Подождите {RATE_LIMIT_SECONDS} секунд.")
+        return
     bot.send_message(
         message.chat.id,
         "Social Media Marketing — разработка и развитие группы «Вконтакте» и на канале «Telegram», "
@@ -239,6 +297,50 @@ def handle_beta(message):
         "<b><a href='https://iccup.com/files/download/3600ecf6b55f9e10d5f707c1134f0f1a/iCCup_BETA_Star_Launcher.html'>Установить</a></b>"
     )
     bot.send_message(message.chat.id, description, parse_mode='HTML')
+
+@bot.message_handler(commands=['stats'])
+def stats_command(message):
+    if is_rate_limited(message.from_user.id):
+        bot.send_message(message.chat.id, f"⏳ Пожалуйста, не отправляйте запросы так часто. Подождите {RATE_LIMIT_SECONDS} секунд.")
+        return
+    args = message.text.split(maxsplit=1)
+    if len(args) < 2 or not args[1].strip():
+        bot.send_message(message.chat.id, "❌ Пожалуйста, укажите никнейм после команды, например: /stats nickname")
+        return
+    nickname = args[1].strip()
+    if len(nickname) > MAX_TEXT_LENGTH:
+        bot.send_message(message.chat.id, f"❌ Никнейм слишком длинный (максимум {MAX_TEXT_LENGTH} символов).")
+        return
+    msg = bot.send_message(message.chat.id, f"⏳ Получаю статистику для {nickname}...")
+    try:
+        stats_data = get_cached_stats(nickname)
+        if 'Ошибка' in stats_data:
+            bot.send_message(message.chat.id, f"❌ Ошибка: {stats_data['Ошибка']}")
+            return
+        html_content = render_stats_html(stats_data)
+        screenshot_bytes = take_screenshot(html_content)
+        with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
+            tmp.write(screenshot_bytes)
+            tmp_path = tmp.name
+        with open(tmp_path, 'rb') as img_file:
+            bot.send_photo(message.chat.id, img_file)
+        os.remove(tmp_path)
+    except Exception as e:
+        bot.send_message(message.chat.id, f"❌ Произошла ошибка: {e}")
+
+@bot.message_handler(func=lambda m: m.text in ['❓ FAQ', '🛠 Техническая поддержка', '🎉 Конкурсы', 'Вакансии', '�� BETA STAR LAUNCHER', 'Beta Star Lauchner'])
+def reset_context_on_other_buttons(message):
+    waiting_for_nickname[message.from_user.id] = False
+    if message.text == '❓ FAQ':
+        handle_faq(message)
+    elif message.text == '🛠 Техническая поддержка':
+        handle_support(message)
+    elif message.text == '🎉 Конкурсы':
+        handle_contests(message)
+    elif message.text == 'Вакансии':
+        handle_jobs(message)
+    elif message.text == '🚀 BETA STAR LAUNCHER' or message.text == 'Beta Star Lauchner':
+        handle_beta(message)
 
 if __name__ == "__main__":
     bot.polling(none_stop=True) 
