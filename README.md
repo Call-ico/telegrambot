@@ -1,1 +1,1 @@
-# telegrambot
+playwright install
