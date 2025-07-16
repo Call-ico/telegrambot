@@ -1,13 +1,30 @@
 import os
 import tempfile
 import time
+import base64
 import telebot
-from config import TELEGRAM_TOKEN
+from config import (
+    TELEGRAM_TOKEN, AUTOPOST_CHANNEL_ID, AUTOPOST_HOUR, AUTOPOST_MINUTE,
+    CACHE_TTL, MAX_TEXT_LENGTH, RATE_LIMIT_SECONDS,
+    MUSIC_KEYWORDS, MUSIC_MAX_DURATION_SEC, MUSIC_POST_DAYS, MUSIC_POST_HOUR, MUSIC_POST_MINUTE
+)
 import jinja2
 from pparser import fetch_iccup_stats_async
 import asyncio
 from telebot import types
 from playwright.sync_api import sync_playwright
+from pparser import fetch_top_streak_player
+from apscheduler.schedulers.background import BackgroundScheduler
+import pytz
+import html
+import subprocess
+from ytmusicapi import YTMusic
+import random
+from datetime import datetime
+import re
+import glob
+
+print("Текущее время МСК:", datetime.now(pytz.timezone('Europe/Moscow')))
 
 jinja_env = jinja2.Environment(
     loader=jinja2.FileSystemLoader('templates'),
@@ -33,10 +50,43 @@ def get_cached_stats(nickname):
 
 def render_stats_html(stats_data):
     template = jinja_env.get_template('index.html')
+    
+
+    try:
+        with open('static/style.css', 'r', encoding='utf-8') as css_file:
+            css_content = css_file.read()
+    except FileNotFoundError:
+        css_content = "/* CSS file not found */"
+    
+    def get_image_as_base64(image_path):
+        """Конвертирует изображение в base64 для встраивания в HTML"""
+        try:
+            with open(image_path, 'rb') as img_file:
+                img_data = img_file.read()
+                img_base64 = base64.b64encode(img_data).decode('utf-8')
+
+                if image_path.lower().endswith('.png'):
+                    mime_type = 'image/png'
+                elif image_path.lower().endswith('.jpg') or image_path.lower().endswith('.jpeg'):
+                    mime_type = 'image/jpeg'
+                else:
+                    mime_type = 'image/png'  
+                result = f'data:{mime_type};base64,{img_base64}'
+                return result
+        except FileNotFoundError:
+            return ''  
+        except Exception as e:
+            return ''
+    
     def fake_url_for_static(filename):
-        abs_path = os.path.abspath(os.path.join('static', filename))
-        return 'file:///' + abs_path.replace('\\', '/')
+        """Возвращает base64 данные изображения вместо пути"""
+        image_path = f'static/{filename}'
+        result = get_image_as_base64(image_path)
+        return result
+    
     jinja_env.globals['url_for'] = lambda endpoint, filename: fake_url_for_static(filename) if endpoint == 'static' else ''
+    jinja_env.globals['inline_css'] = css_content
+    
     return template.render(data=stats_data)
 
 def take_screenshot(html_content):
@@ -69,6 +119,7 @@ def main_keyboard():
     keyboard.row('📈 Статистика игроков', '❓ FAQ')
     keyboard.row('🛠 Техническая поддержка', '🎉 Конкурсы')
     keyboard.row('Вакансии', 'Beta Star Lauchner')
+    keyboard.row('Музыкальные подборки')
     return keyboard
 def is_rate_limited(user_id):
     now = time.time()
@@ -112,7 +163,7 @@ def handle_stats_button(message):
 
 def process_stats_nickname(message):
     if not waiting_for_nickname.get(message.from_user.id):
-        bot.send_message(message.chat.id, "❌ Контекст запроса статистики утерян. Пожалуйста, нажмите '📈 Статистика игроков' ещё раз.")
+        bot.send_message(message.chat.id, "❌ Повторите запрос.")
         return
     waiting_for_nickname[message.from_user.id] = False
     if not message.text:
@@ -263,12 +314,12 @@ def handle_jobs(message):
         "привлечение и удержание новых пользователей, общение с нашей аудиторией, создание уникального "
         "контента и проведение топовых эвентов с нашими юзерами.\n\n"
         "Зарплата 350 капсов в месяц\n\n"
-        "Заинтересованы? <a href='https://t.me/Otsustvie_kreativa'>Обращайтесь</a>\n"
+        "Заинтересованы? <a href='https://t.me/Otsutstvie_kreativa'>Обращайтесь</a>\n"
         "\n"
         "Forum Team — Создание качественного, креативного контента, модерация форума, "
         "поддержание чистоты и порядка, постоянное взаимодействие с игровым сообществом. Работа "
         "с аудиторией, направленная на улучшение качества общения.\n"
-        "Заинтересованы? <a href='https://t.me/Absolutecinemas'>Обращайтесь</a>\n"
+        "Заинтересованы? <a href='https://t.me/korolevaname'>Обращайтесь</a>\n"
         "\n"
         "Design Team — создание баннеров для новостей, а также других элементов оформления сайта.\n"
         "— Работа с Photoshop и его аналогами на среднем уровне и выше.\n"
@@ -292,11 +343,27 @@ def handle_jobs(message):
 def handle_beta(message):
     with open('static/launcher.png', 'rb') as photo:
         bot.send_photo(message.chat.id, photo)
+
     description = (
-        "Это публичная БЕТА версия нового iCCup Star Launcher-a, с помощью которого вы можете войти в свой аккаунт, подключится к серверу, общаться с друзьями в продвинутой версии чата, искать игры, с множеством фильтров. И конечно же, вы можете создать или зайти в игровое лобби только с помощью нового лаунчера. Варкрафт 3 запускается только в момент загрузки самой игры. Благодаря этому мы наконец-то можем обновить и улучшить интерфейс Варкрафта, добавить новых элементов, исправить старинные баги и просто обойти ограничения с которыми преходилось бороться до сих пор. !ВАЖНО! Это публичная, но БЕТА версия лаунчера. В нем есть баги, каких-то элементов может пока не хватать, какие-то функции могут работать неправильно. Это нормальная часть процесса тестирования. Новая версия лаунчера постоянно обновляется, изменяется и дорабатывается. Если вы нашли какие-то баги, заметили то, что работает плохо или совсем сломалось, приглашаем вас поделиться мнениями и идеями в Багтрекере (раздел Лаунчер). https://iccup.com/bugtracker?type=launcher\n\n"
-        "<b><a href='https://iccup.com/files/download/3600ecf6b55f9e10d5f707c1134f0f1a/iCCup_BETA_Star_Launcher.html'>Установить</a></b>"
+        "Это публичная БЕТА версия нового iCCup Star Launcher-a, с помощью которого вы можете войти в свой аккаунт, "
+        "подключиться к серверу, общаться с друзьями в продвинутой версии чата, искать игры с множеством фильтров. "
+        "И конечно же, вы можете создать или зайти в игровое лобби только с помощью нового лаунчера.\n\n"
+        "Warcraft 3 запускается только в момент загрузки самой игры. Благодаря этому мы наконец-то можем обновить и "
+        "улучшить интерфейс Warcraft-а, добавить новые элементы, исправить старые баги и обойти ограничения, с которыми "
+        "приходилось бороться до сих пор.\n\n"
+        "❗ <b>ВАЖНО:</b> Это публичная, но БЕТА версия лаунчера. В нём есть баги, каких-то элементов может не хватать, "
+        "какие-то функции могут работать неправильно. Это нормальная часть процесса тестирования. "
+        "Новая версия лаунчера постоянно обновляется, изменяется и дорабатывается.\n\n"
+        "Если вы нашли баги или хотите поделиться идеями — пишите в Багтрекер (раздел Лаунчер):\n"
+        "https://iccup.com/bugtracker?type=launcher\n\n"
+        "                      -------------------------\n"
+        "                      <b><a href='https://iccup.com/files/download/3600ecf6b55f9e10d5f707c1134f0f1a/iCCup_BETA_Star_Launcher.html'>-  Установить  -</a></b>\n"
+        "                      -------------------------\n\n"
+        "⚠️ <b>ВНИМАНИЕ: Не нажимайте с мобильных устройств!</b>"
     )
+
     bot.send_message(message.chat.id, description, parse_mode='HTML')
+
 
 @bot.message_handler(commands=['stats'])
 def stats_command(message):
@@ -328,7 +395,7 @@ def stats_command(message):
     except Exception as e:
         bot.send_message(message.chat.id, f"❌ Произошла ошибка: {e}")
 
-@bot.message_handler(func=lambda m: m.text in ['❓ FAQ', '🛠 Техническая поддержка', '🎉 Конкурсы', 'Вакансии', '�� BETA STAR LAUNCHER', 'Beta Star Lauchner'])
+@bot.message_handler(func=lambda m: m.text in ['❓ FAQ', '🛠 Техническая поддержка', '🎉 Конкурсы', 'Вакансии', '🚀 BETA STAR LAUNCHER', 'Beta Star Lauchner'])
 def reset_context_on_other_buttons(message):
     waiting_for_nickname[message.from_user.id] = False
     if message.text == '❓ FAQ':
@@ -341,6 +408,148 @@ def reset_context_on_other_buttons(message):
         handle_jobs(message)
     elif message.text == '🚀 BETA STAR LAUNCHER' or message.text == 'Beta Star Lauchner':
         handle_beta(message)
+
+@bot.message_handler(content_types=['new_chat_members'])
+def greet_new_members(message):
+    for new_member in message.new_chat_members:
+        bot.send_message(
+            message.chat.id,
+            f"Привет, {new_member.first_name}! Добро пожаловать! Выберите действие:",
+            reply_markup=main_keyboard()
+        )
+
+def auto_post_top_streak():
+    try:
+        moscow_tz = pytz.timezone('Europe/Moscow')
+        current_time = datetime.now(moscow_tz)
+        
+        # Получаем ник первого игрока
+        nickname = fetch_top_streak_player()
+        if not nickname:
+            return
+        # Получаем статистику игрока
+        stats_data = get_cached_stats(nickname)
+        if 'Ошибка' in stats_data:
+            return
+        html_content = render_stats_html(stats_data)
+        screenshot_bytes = take_screenshot(html_content)
+        # ID канала/чата для публикации из конфига
+        nickname_safe = html.escape(nickname)
+        caption = (
+        f"🔥🔥ИГРОК ДНЯ🔥🔥\n\n"
+        f"Каждый день кто-то поднимается выше остальных. Сегодня - это "
+        f"<a href=\"https://iccup.com/dota/gamingprofile/{nickname_safe}\">{nickname_safe}</a>.\n"
+        "Его путь был безошибочен: матч за матчем, победа за победой.\n"
+        "Без лишних слов - сегодня именно он держит самую длинную серию побед на платформе.\n"
+        "Это не случайность и не везение - это стабильность, опыт и холодный разум.\n"
+        "Поздравляем и грацуем!\n"
+        "Пост создано автоматический\n"
+        "#Игрокдня  #iCCup"
+        )
+        with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
+            tmp.write(screenshot_bytes)
+            tmp_path = tmp.name
+        with open(tmp_path, 'rb') as img_file:
+            bot.send_photo(AUTOPOST_CHANNEL_ID, img_file, caption=caption, parse_mode="HTML")
+        os.remove(tmp_path)
+    except Exception as e:
+        pass
+
+def auto_post_music():
+    print("auto_post_music: запуск задачи")
+    try:
+        ytmusic = YTMusic()
+        print("auto_post_music: YTMusic инициализирован")
+        keywords = [
+            "Dota music", "Epic gaming music", "Dark fantasy soundtrack",
+            "Anime battle music", "Underground rap gaming",
+            "Dota 2 playlist", "Instrumental action music",
+            "Slavic gaming music", "Warcraft music",
+            "Tryhard playlist",
+            "phonk gaming",
+            "trap instrumental",
+            "drill type beat",
+            "chill rap",
+            "dubstep gaming",
+            "synthwave gamer",
+            "nu metal",
+            "lofi gaming",
+            "hardstyle gaming",
+            "dota soundtrack"
+        ]
+        search_query = random.choice(keywords)
+        print(f"auto_post_music: поисковый запрос: {search_query}")
+        results = ytmusic.search(search_query, filter='songs')
+        print(f"auto_post_music: найдено {len(results)} треков")
+        if not results:
+            print("auto_post_music: нет результатов")
+            return
+        top_tracks = results[:10] if len(results) >= 10 else results
+        max_duration_sec = 300 
+        filtered_tracks = []
+        for t in top_tracks:
+            duration_str = t.get('duration')
+            if duration_str:
+                parts = duration_str.split(':')
+                try:
+                    if len(parts) == 3:
+                        seconds = int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
+                    elif len(parts) == 2:
+                        seconds = int(parts[0]) * 60 + int(parts[1])
+                    else:
+                        seconds = int(parts[0])
+                except Exception:
+                    continue
+                if seconds <= max_duration_sec:
+                    filtered_tracks.append(t)
+        if not filtered_tracks:
+            print("auto_post_music: нет подходящих треков по длительности")
+            return
+        track = random.choice(filtered_tracks)
+        print(f"auto_post_music: выбран трек {track.get('title')}")
+        video_id = track.get('videoId')
+        if not video_id:
+            print("auto_post_music: нет videoId")
+            return
+        url = f"https://music.youtube.com/watch?v={video_id}"
+
+        safe_title = re.sub(r'[\\/*?:"<>|#]', "", track['title'])
+        output_template = f"{safe_title}.%(ext)s"
+        print(f"auto_post_music: скачивание {url} в шаблон {output_template}")
+        subprocess.run([
+            'yt-dlp',
+            '-f', 'bestaudio[ext=m4a]/bestaudio',
+            '-o', output_template,
+            url
+        ], check=True)
+
+        files = glob.glob(f"{safe_title}*.m4a")
+        if not files:
+            print("auto_post_music: аудиофайл не найден после скачивания")
+            return
+        output_file = files[0]
+        print(f"auto_post_music: отправка аудио {output_file} в канал {AUTOPOST_CHANNEL_ID}")
+        try:
+            with open(output_file, 'rb') as audio:
+                caption = (
+                    f"{track['title']} — {track['artists'][0]['name']}" if track.get('artists') else track['title']
+                ) + "\n\nМузыка дня.\nСлушаем и тащим катки \n Пост создано автоматический\n\n#Music || #iccup"
+                bot.send_audio(AUTOPOST_CHANNEL_ID, audio, caption=caption)
+            print("auto_post_music: аудио отправлено успешно")
+        except Exception as e:
+            print(f'Ошибка отправки аудио: {e}')
+        for f in files:
+            if os.path.exists(f):
+                os.remove(f)
+    except Exception as e:
+        print(f'Ошибка автопостинга музыки: {e}')
+
+
+scheduler = BackgroundScheduler(timezone=pytz.timezone('Europe/Moscow'))
+scheduler.add_job(auto_post_top_streak, 'cron', hour=AUTOPOST_HOUR, minute=AUTOPOST_MINUTE)
+scheduler.add_job(auto_post_music, 'cron', day_of_week=MUSIC_POST_DAYS, hour=MUSIC_POST_HOUR, minute=MUSIC_POST_MINUTE)
+scheduler.start()
+print(f"Планировщик запущен. Музыка будет публиковаться по {MUSIC_POST_DAYS} в {MUSIC_POST_HOUR:02d}:{MUSIC_POST_MINUTE:02d} МСК")
 
 if __name__ == "__main__":
     bot.polling(none_stop=True) 
