@@ -5,3 +5,7 @@ aiogram
 pyTelegramBotAPI
 beautifulsoup4
 aiohttp 
+APScheduler
+pytz 
+ytmusicapi
+yt-dlp 
