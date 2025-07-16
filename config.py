@@ -1,14 +1,15 @@
 TELEGRAM_TOKEN = " token"  
 AUTOPOST_CHANNEL_ID = -1001261804062  
 
-AUTOPOST_HOUR = 21  
+
+AUTOPOST_HOUR = 21 #Игрок дня
 AUTOPOST_MINUTE = 0
 
-MUSIC_POST_DAYS = 'mon,wed,fri'  
-MUSIC_POST_HOUR = 10  
+MUSIC_POST_DAYS = 'mon,tue,wed,thu,fri,sat,sun'   #Музыка
+MUSIC_POST_HOUR = 18  
 MUSIC_POST_MINUTE = 0
 
-CACHE_TTL = 60  
+CACHE_TTL = 60
 MAX_TEXT_LENGTH = 32  
 RATE_LIMIT_SECONDS = 1  
 
@@ -43,4 +44,14 @@ MUSIC_KEYWORDS = [
 
 
 
-MUSIC_MAX_DURATION_SEC = 300  
+MUSIC_MAX_DURATION_SEC = 300  #Макс длительность музыки
+
+# еженеделка
+AUTOPOST_SCHEDULE = [
+    {
+        'day': 'sat',
+        'hour': 16,
+        'minute': 0
+    },
+]
+
