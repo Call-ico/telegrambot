@@ -1,6 +1,7 @@
 
 from bs4 import BeautifulSoup
 import aiohttp
+from playwright.sync_api import sync_playwright
 
 BASE_URL = "https://iccup.com/ru/dota/gamingprofile/"
 PROFILE_BASE_URL = "https://iccup.com/profile/view/"
@@ -98,8 +99,6 @@ async def fetch_iccup_stats_async(nickname):
             separator=" ").strip() if лучший_счет_td and лучший_счет_td.find_next_sibling("td") else "—"
         stats["Макс. стрик побед"] = get_stat_value(soup_dota, "Макс. стрик побед")
         stats["Текущий стрик"] = get_stat_value(soup_dota, "Текущий стрик")
-        status_html = str(soup_dota)
-        stats["Онлайн"] = parse_online_status(status_html)
         kda_table_container = soup_dota.find("div", class_="kda-table")
         if kda_table_container:
             kda_spans = kda_table_container.find_all("span", class_="bidlokod1")
@@ -149,6 +148,7 @@ async def fetch_iccup_stats_async(nickname):
                 value = value_tag.text.strip()
                 stats[f"Лучший {title}"] = f"{hero} ({value})"
         soup_profile = BeautifulSoup(await get_html(profile_url), "html.parser")
+        stats["Онлайн"] = parse_online_status_advanced(soup_dota, soup_profile)
         ls_inside = soup_profile.find('div', class_='ls-inside')
         if ls_inside:
             img_tag = ls_inside.find('img')
@@ -233,9 +233,92 @@ def parse_kda(soup):
     return kda
 
 def parse_online_status(html):
-    if 'online' in html.lower():
-        return "online"
-    elif 'offline' in html.lower():
+    """
+    Улучшенная функция для определения статуса онлайн/оффлайн
+    Ищет различные индикаторы статуса в HTML
+    """
+    html_lower = html.lower()
+    
+    online_indicators = [
+        'online',
+    ]
+    
+    # Ищем различные индикаторы оффлайн статуса
+    offline_indicators = [
+        'offline',
+    ]
+    
+    # Проверяем наличие онлайн индикаторов
+    for indicator in online_indicators:
+        if indicator in html_lower:
+            return "online"
+    
+    # Проверяем наличие оффлайн индикаторов
+    for indicator in offline_indicators:
+        if indicator in html_lower:
+            return "offline"
+    return "unknown"
+
+def parse_online_status_advanced(soup_dota, soup_profile):
+    """
+    Продвинутая функция для определения статуса онлайн/оффлайн
+    Анализирует структуру HTML и ищет специфичные элементы iCCup
+    """
+    try:
+        online_elements = soup_dota.find_all(class_=lambda x: x and any(word in x.lower() for word in ['online', 'status', 'active', 'live']))
+        offline_elements = soup_dota.find_all(class_=lambda x: x and any(word in x.lower() for word in ['offline', 'inactive', 'last-seen']))
+        
+        last_seen_elements = soup_profile.find_all(string=lambda text: text and any(word in text.lower() for word in ['последний вход', 'last seen', 'last login']))
+        
+        if offline_elements or last_seen_elements:
+            return "offline"
+        
+        if online_elements:
+            return "online"
+        
+        last_seen_text = soup_profile.get_text().lower()
+        if any(word in last_seen_text for word in ['последний вход', 'last seen', 'last login', 'недавно']):
+            return "offline"
+        
+        activity_indicators = soup_dota.find_all(string=lambda text: text and any(word in text.lower() for word in ['играет', 'в игре', 'активен', 'online']))
+        if activity_indicators:
+            return "online"
+        
         return "offline"
-    else:
+        
+    except Exception as e:
         return "unknown"
+
+def fetch_top_streak_player():
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
+
+            page.goto("https://iccup.com/", wait_until="domcontentloaded", timeout=60000)
+            
+            try:
+                streak_block = page.wait_for_selector("div.streak-1", timeout=30000)
+            except Exception:
+                browser.close()
+                return None
+            
+            first_player = page.query_selector("div.streak-1 > div > div:nth-child(1)")
+            if not first_player:
+                browser.close()
+                return None
+            
+            profile_link = first_player.query_selector("a[href*='gamingprofile']")
+            if not profile_link:
+                browser.close()
+                return None
+
+            nickname = profile_link.inner_text().strip()
+            browser.close()
+            return nickname
+            
+    except Exception as e:
+        return None
+
+
+
