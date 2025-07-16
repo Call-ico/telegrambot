@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <title>Статистика ICCup</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <style>{{ inline_css|safe }}</style>
 </head>
 <body>
   <div class="glass">
@@ -11,7 +11,7 @@
 <!-- Имя + Флаг + элитка -->
     <div class="name-flag">
       <img src="{{ data['Флаг'] }}" alt="Флаг">
-      <span>{{ data['Имя'] }}</span>
+      <span{% if data['Имя']|length > 13 %} class="long-nickname"{% endif %}>{{ data['Имя'] }}</span>
 
       {% if data["Элитный"] %}
         <img src="{{ url_for('static', filename='elite.png') }}" alt="Элитка">
@@ -39,7 +39,7 @@
             <span>{{ data['Лучший герой']['name'] }}</span>
           {% endif %}
         </div>
-        <p>коэффициент крутости: <b>{{ data.get('Лучший герой', {}).get('k_coefficient', 'N/A') }}</b></p>
+        <p>Best Performance <b>{{ data.get('Лучший герой', {}).get('k_coefficient', 'N/A') }}</b></p>
       </div>
     </div>
 
