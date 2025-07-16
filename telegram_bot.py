@@ -23,8 +23,13 @@ import random
 from datetime import datetime
 import re
 import glob
+import shutil
+from playwright.async_api import async_playwright
+import datetime
+import config
+from PIL import Image
 
-print("Текущее время МСК:", datetime.now(pytz.timezone('Europe/Moscow')))
+print("Текущее время МСК:", datetime.datetime.now(pytz.timezone('Europe/Moscow')))
 
 jinja_env = jinja2.Environment(
     loader=jinja2.FileSystemLoader('templates'),
@@ -119,7 +124,6 @@ def main_keyboard():
     keyboard.row('📈 Статистика игроков', '❓ FAQ')
     keyboard.row('🛠 Техническая поддержка', '🎉 Конкурсы')
     keyboard.row('Вакансии', 'Beta Star Lauchner')
-    keyboard.row('Музыкальные подборки')
     return keyboard
 def is_rate_limited(user_id):
     now = time.time()
@@ -421,19 +425,17 @@ def greet_new_members(message):
 def auto_post_top_streak():
     try:
         moscow_tz = pytz.timezone('Europe/Moscow')
-        current_time = datetime.now(moscow_tz)
+        current_time = datetime.datetime.now(moscow_tz)
         
-        # Получаем ник первого игрока
+
         nickname = fetch_top_streak_player()
         if not nickname:
             return
-        # Получаем статистику игрока
         stats_data = get_cached_stats(nickname)
         if 'Ошибка' in stats_data:
             return
         html_content = render_stats_html(stats_data)
         screenshot_bytes = take_screenshot(html_content)
-        # ID канала/чата для публикации из конфига
         nickname_safe = html.escape(nickname)
         caption = (
         f"🔥🔥ИГРОК ДНЯ🔥🔥\n\n"
@@ -455,29 +457,16 @@ def auto_post_top_streak():
     except Exception as e:
         pass
 
+def make_safe_filename(name):
+    import re
+    return re.sub(r'[^a-zA-Zа-яА-ЯёЁ0-9 \-_.(),\[\]]+', '', name)
+
 def auto_post_music():
     print("auto_post_music: запуск задачи")
     try:
         ytmusic = YTMusic()
         print("auto_post_music: YTMusic инициализирован")
-        keywords = [
-            "Dota music", "Epic gaming music", "Dark fantasy soundtrack",
-            "Anime battle music", "Underground rap gaming",
-            "Dota 2 playlist", "Instrumental action music",
-            "Slavic gaming music", "Warcraft music",
-            "Tryhard playlist",
-            "phonk gaming",
-            "trap instrumental",
-            "drill type beat",
-            "chill rap",
-            "dubstep gaming",
-            "synthwave gamer",
-            "nu metal",
-            "lofi gaming",
-            "hardstyle gaming",
-            "dota soundtrack"
-        ]
-        search_query = random.choice(keywords)
+        search_query = random.choice(config.MUSIC_KEYWORDS)
         print(f"auto_post_music: поисковый запрос: {search_query}")
         results = ytmusic.search(search_query, filter='songs')
         print(f"auto_post_music: найдено {len(results)} треков")
@@ -505,42 +494,159 @@ def auto_post_music():
         if not filtered_tracks:
             print("auto_post_music: нет подходящих треков по длительности")
             return
-        track = random.choice(filtered_tracks)
-        print(f"auto_post_music: выбран трек {track.get('title')}")
-        video_id = track.get('videoId')
-        if not video_id:
-            print("auto_post_music: нет videoId")
-            return
-        url = f"https://music.youtube.com/watch?v={video_id}"
+        tracks_to_send = random.sample(filtered_tracks, min(3, len(filtered_tracks)))
+        media = []
+        captions = []
+        audio_files = []
+        USE_TEMP_DIR = True  
+        for idx, track in enumerate(tracks_to_send, 1):
+            print(f"auto_post_music: выбран трек {track.get('title')}")
+            video_id = track.get('videoId')
+            if not video_id:
+                print("auto_post_music: нет videoId")
+                continue
+            url = f"https://music.youtube.com/watch?v={video_id}"
 
-        safe_title = re.sub(r'[\\/*?:"<>|#]', "", track['title'])
-        output_template = f"{safe_title}.%(ext)s"
-        print(f"auto_post_music: скачивание {url} в шаблон {output_template}")
-        subprocess.run([
-            'yt-dlp',
-            '-f', 'bestaudio[ext=m4a]/bestaudio',
-            '-o', output_template,
-            url
-        ], check=True)
+            artist = track['artists'][0]['name'] if track.get('artists') and track['artists'] else ''
+            pretty_title = make_safe_filename(f"{track['title']} — {artist}".strip())
+            output_template = f"{pretty_title}.%(ext)s"
 
-        files = glob.glob(f"{safe_title}*.m4a")
-        if not files:
-            print("auto_post_music: аудиофайл не найден после скачивания")
+            if USE_TEMP_DIR:
+                import tempfile
+                with tempfile.TemporaryDirectory() as tempdir:
+                    print(f"[LOG] Ожидаемое имя: {pretty_title}.%(ext)s (tempdir: {tempdir})")
+                    before_files = set(os.listdir(tempdir))
+                    try:
+                        subprocess.run([
+                            'yt-dlp',
+                            '--no-part',
+                            '--no-overwrites',
+                            '-f', 'bestaudio[ext=m4a][acodec!=none][vcodec=none][container!=dash]/bestaudio/best',
+                            '-o', os.path.join(tempdir, output_template),
+                            url
+                        ], check=True)
+                    except Exception as e:
+                        print(f"[LOG] yt-dlp не смог скачать обычный m4a: {e}")
+                        continue
+                    after_files = set(os.listdir(tempdir))
+                    new_files = list(after_files - before_files)
+                    print(f"[LOG] Новые файлы после скачивания: {new_files}")
+                    found_file = None
+                    for ext in ('.m4a', '.mp3', '.webm', '.opus'):
+                        candidate = os.path.join(tempdir, f"{pretty_title}{ext}")
+                        if os.path.exists(candidate):
+                            found_file = candidate
+                            print(f"[LOG] Найден файл по шаблону: {found_file}")
+                            break
+                    if not found_file:
+                        for f in new_files:
+                            if f.lower().endswith(('.m4a', '.mp3', '.webm', '.opus')):
+                                found_file = os.path.join(tempdir, f)
+                                print(f"[LOG] yt-dlp сохранил файл с другим именем: {found_file}")
+                                break
+                    if not found_file:
+                        print(f"[LOG] аудиофайл не найден после скачивания")
+                        continue
+                    desired_file = f"{pretty_title}{os.path.splitext(found_file)[1]}"
+                    final_path = os.path.abspath(desired_file)
+                    if os.path.abspath(found_file) != final_path:
+                        try:
+                            shutil.move(found_file, final_path)
+                            print(f"[LOG] Файл перемещён: {found_file} -> {final_path}")
+                            found_file = final_path
+                        except Exception as e:
+                            print(f"[LOG] не удалось переместить файл: {e}")
+                            continue
+                    else:
+                        print(f"[LOG] Файл уже с нужным именем: {found_file}")
+            else:
+                print(f"[LOG] Ожидаемое имя: {pretty_title}.%(ext)s (cwd)")
+                before_files = set(os.listdir('.'))
+                try:
+                    subprocess.run([
+                        'yt-dlp',
+                        '--no-part',
+                        '--no-overwrites',
+                        '-f', 'bestaudio[ext=m4a][acodec!=none][vcodec=none][container!=dash]/bestaudio/best',
+                        '-o', output_template,
+                        url
+                    ], check=True)
+                except Exception as e:
+                    print(f"[LOG] yt-dlp не смог скачать обычный m4a: {e}")
+                    continue
+                after_files = set(os.listdir('.'))
+                new_files = list(after_files - before_files)
+                print(f"[LOG] Новые файлы после скачивания: {new_files}")
+                found_file = None
+                for ext in ('.m4a', '.mp3', '.webm', '.opus'):
+                    candidate = f"{pretty_title}{ext}"
+                    if os.path.exists(candidate):
+                        found_file = candidate
+                        print(f"[LOG] Найден файл по шаблону: {found_file}")
+                        break
+                if not found_file:
+                    for f in new_files:
+                        if f.lower().endswith(('.m4a', '.mp3', '.webm', '.opus')):
+                            found_file = f
+                            print(f"[LOG] yt-dlp сохранил файл с другим именем: {found_file}")
+                            break
+                if not found_file:
+                    print(f"[LOG] аудиофайл не найден после скачивания")
+                    continue
+                # Переименовываем файл, если имя не совпадает с желаемым
+                desired_file = f"{pretty_title}{os.path.splitext(found_file)[1]}"
+                if os.path.abspath(found_file) != os.path.abspath(desired_file):
+                    try:
+                        os.rename(found_file, desired_file)
+                        print(f"[LOG] Файл переименован: {found_file} -> {desired_file}")
+                        found_file = desired_file
+                    except Exception as e:
+                        print(f"[LOG] не удалось переименовать файл: {e}")
+                        continue
+                else:
+                    print(f"[LOG] Файл уже с нужным именем: {found_file}")
+                import time
+                time.sleep(1) 
+            print(f"[LOG] Итоговый файл для отправки: {found_file}")
+            audio_files.append(found_file)
+            captions.append(f"{track['title']} — {artist}" if artist else track['title'])
+
+        if not audio_files:
+            print("auto_post_music: не удалось подготовить ни одного аудиофайла")
             return
-        output_file = files[0]
-        print(f"auto_post_music: отправка аудио {output_file} в канал {AUTOPOST_CHANNEL_ID}")
+        full_caption = "Музыка дня!\nСлушаем и тащим катки!\n\nПост создан автоматически\n\n"
+        for idx, cap in enumerate(captions, 1):
+            full_caption += f"#{idx}: {cap}\n\n"
+        full_caption += "#Music || #iccup"
+
+        from telebot.types import InputMediaAudio
+        media = []
+        opened_files = []
+        for i, audio_path in enumerate(audio_files):
+            audio_file = open(audio_path, 'rb')
+            opened_files.append(audio_file)
+            if i == 0:
+                media.append(InputMediaAudio(audio_file, caption=full_caption))
+            else:
+                media.append(InputMediaAudio(audio_file))
+
         try:
-            with open(output_file, 'rb') as audio:
-                caption = (
-                    f"{track['title']} — {track['artists'][0]['name']}" if track.get('artists') else track['title']
-                ) + "\n\nМузыка дня.\nСлушаем и тащим катки \n Пост создано автоматический\n\n#Music || #iccup"
-                bot.send_audio(AUTOPOST_CHANNEL_ID, audio, caption=caption)
-            print("auto_post_music: аудио отправлено успешно")
+            bot.send_media_group(AUTOPOST_CHANNEL_ID, media)
+            print("auto_post_music: media_group отправлен успешно")
         except Exception as e:
-            print(f'Ошибка отправки аудио: {e}')
-        for f in files:
-            if os.path.exists(f):
-                os.remove(f)
+            print(f'Ошибка отправки media_group: {e}')
+        finally:
+            for fobj in opened_files:
+                try:
+                    fobj.close()
+                except Exception:
+                    pass
+            for f in audio_files:
+                if os.path.exists(f):
+                    try:
+                        os.remove(f)
+                    except Exception as e:
+                        print(f"[LOG] Не удалось удалить файл {f}: {e}")
     except Exception as e:
         print(f'Ошибка автопостинга музыки: {e}')
 
@@ -550,6 +656,128 @@ scheduler.add_job(auto_post_top_streak, 'cron', hour=AUTOPOST_HOUR, minute=AUTOP
 scheduler.add_job(auto_post_music, 'cron', day_of_week=MUSIC_POST_DAYS, hour=MUSIC_POST_HOUR, minute=MUSIC_POST_MINUTE)
 scheduler.start()
 print(f"Планировщик запущен. Музыка будет публиковаться по {MUSIC_POST_DAYS} в {MUSIC_POST_HOUR:02d}:{MUSIC_POST_MINUTE:02d} МСК")
+print(f"Игрок дня будет публиковаться в {AUTOPOST_HOUR:02d}:{AUTOPOST_MINUTE:02d} МСК")
+
+async def screenshot_iccup_elements(output_path="iccup_screenshot.png"):
+    import asyncio
+    from playwright.async_api import async_playwright
+    selectors = [
+        "#level0 > main > div:nth-child(7) > div.data-primary.data-sm.pr-10.col-6",
+        "#level0 > main > div:nth-child(7) > div:nth-child(8)"
+    ]
+    player_info_selector = "#level0 > main > div:nth-child(7) > div.data-primary.data-sm.pr-10.col-6 > div:nth-child(2)"
+    team_info_selector = "#level0 > main > div:nth-child(7) > div:nth-child(8) > div:nth-child(2)"
+    temp_files = []
+    player_info = None
+    team_info = None
+    async with async_playwright() as p:
+        browser = await p.chromium.launch()
+        page = await browser.new_page()
+        await page.goto("https://iccup.com/")
+        images = []
+        for idx, selector in enumerate(selectors):
+            try:
+                await page.wait_for_selector(selector, timeout=10000)
+                element = await page.query_selector(selector)
+                temp_file = tempfile.NamedTemporaryFile(suffix=f"_{idx}.png", delete=False)
+                await element.screenshot(path=temp_file.name)
+                temp_files.append(temp_file.name)
+                images.append(Image.open(temp_file.name))
+            except Exception as e:
+                print(f"[AUTOPOST][ERROR] Не удалось сделать скриншот селектора {selector}: {e}")
+        try:
+            await page.wait_for_selector(player_info_selector, timeout=10000)
+            player_info_elem = await page.query_selector(player_info_selector)
+            player_info = await player_info_elem.inner_text()
+        except Exception as e:
+            print(f"[AUTOPOST][ERROR] Не удалось получить инфо игрока: {e}")
+        try:
+            await page.wait_for_selector(team_info_selector, timeout=10000)
+            team_info_elem = await page.query_selector(team_info_selector)
+            team_info = await team_info_elem.inner_text()
+        except Exception as e:
+            print(f"[AUTOPOST][ERROR] Не удалось получить инфо команды: {e}")
+        await browser.close()
+    if not images:
+        raise Exception("Не удалось получить ни одного скриншота с iccup.com")
+    total_width = sum(img.width for img in images)
+    max_height = max(img.height for img in images)
+    combined = Image.new('RGB', (total_width, max_height), (255, 255, 255))
+    x_offset = 0
+    for img in images:
+        combined.paste(img, (x_offset, 0))
+        x_offset += img.width
+    combined.save(output_path)
+    for f in temp_files:
+        try:
+            os.remove(f)
+        except Exception:
+            pass
+    return output_path, player_info, team_info
+
+import re
+
+def parse_player_team_info(text):
+    if not text:
+        return None, None, None
+    m = re.match(r"(.+?) Победы: (\d+) \| Поражения: (\d+)", text)
+    if m:
+        name = m.group(1).strip()
+        wins = m.group(2)
+        losses = m.group(3)
+        return name, wins, losses
+    return text.strip(), None, None
+
+async def autopost_iccup_screenshot(bot):
+    import pytz
+    posted_times = set()
+    while True:
+        now = datetime.datetime.now(pytz.timezone('Europe/Moscow'))
+        now_day = now.strftime("%a").lower() 
+        now_hour = now.hour
+        now_minute = now.minute
+        for sched in config.AUTOPOST_SCHEDULE:
+            sched_day = sched["day"].lower()
+            sched_hour = sched["hour"]
+            sched_minute = sched["minute"]
+            key = f"{sched_day}_{sched_hour:02d}_{sched_minute:02d}_{now.date()}"
+            if now_day == sched_day and now_hour == sched_hour and now_minute == sched_minute and key not in posted_times:
+                try:
+                    screenshot_path, player_info, team_info = await screenshot_iccup_elements()
+                    player_name, player_wins, player_losses = parse_player_team_info(player_info)
+                    team_name, team_wins, team_losses = parse_player_team_info(team_info)
+                    caption = (
+                        "🔥 Итоги недели на ICCup! 🔥\n"
+                        "Каждую неделю мы подводим итоги и чествуем лучших - тех, кто показал максимум скилла и не побоялся бросить вызов топам!\n\n"
+                        "🎯 Лучший игрок недели:\n"
+                        f"🏆 {player_name}"
+                    )
+                    if player_wins and player_losses:
+                        caption += f" - {player_wins} : {player_losses}"
+                    caption += "\nУверенная игра, стабильные победы и заслуженное первое место! Красавчик!\n\n"
+                    caption += "🛡 Лучшая команда недели:\n"
+                    if team_name:
+                        caption += f"🥇 {team_name}"
+                        if team_wins and team_losses:
+                            caption += f" - {team_wins} : {team_losses}"
+                    caption += "\nКомандная мощь в действии! Эти ребята сыграны, как единый организм. Респект!\n\n"
+                    caption += "(Пост создано автоматичесикй)\n\n#итогинедели #iCCup"
+                    with open(screenshot_path, "rb") as photo:
+                        bot.send_photo(config.AUTOPOST_CHANNEL_ID, photo, caption=caption, parse_mode="HTML")
+                    try:
+                        os.remove(screenshot_path)
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
+                posted_times.add(key)
+        await asyncio.sleep(20)
 
 if __name__ == "__main__":
-    bot.polling(none_stop=True) 
+    import asyncio
+    import threading
+    
+    def start_polling():
+        bot.polling(none_stop=True)
+    threading.Thread(target=start_polling, daemon=True).start()
+    asyncio.run(autopost_iccup_screenshot(bot)) 
