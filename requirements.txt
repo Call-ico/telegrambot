@@ -9,3 +9,4 @@ APScheduler
 pytz 
 ytmusicapi
 yt-dlp 
+pillow
