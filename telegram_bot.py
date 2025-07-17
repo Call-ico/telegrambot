@@ -615,8 +615,6 @@ def auto_post_music():
             print("auto_post_music: не удалось подготовить ни одного аудиофайла")
             return
         full_caption = "Музыка дня!\nСлушаем и тащим катки!\n\nПост создан автоматически\n\n"
-        for idx, cap in enumerate(captions, 1):
-            full_caption += f"#{idx}: {cap}\n\n"
         full_caption += "#Music || #iccup"
 
         from telebot.types import InputMediaAudio
