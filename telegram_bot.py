@@ -28,8 +28,16 @@ from playwright.async_api import async_playwright
 import datetime
 import config
 from PIL import Image
+import logging
+import sys
 
-print("Текущее время МСК:", datetime.datetime.now(pytz.timezone('Europe/Moscow')))
+logging.basicConfig(
+    level=logging.INFO,
+    format='[%(asctime)s] %(levelname)s: %(message)s',
+    stream=sys.stdout
+)
+
+logging.info(f"Текущее время МСК: {datetime.datetime.now(pytz.timezone('Europe/Moscow'))}")
 
 jinja_env = jinja2.Environment(
     loader=jinja2.FileSystemLoader('templates'),
@@ -136,13 +144,13 @@ def is_rate_limited(user_id):
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
     if not message.text:
-        bot.send_message(message.chat.id, "❌ Пожалуйста, используйте текстовые команды.")
+        bot.send_message(message.chat.id, "❌ Пожалуйста, используйте текстовые команды.", reply_markup=main_keyboard())
         return
     if len(message.text) > MAX_TEXT_LENGTH:
-        bot.send_message(message.chat.id, f"❌ Сообщение слишком длинное (максимум {MAX_TEXT_LENGTH} символов).")
+        bot.send_message(message.chat.id, f"❌ Сообщение слишком длинное (максимум {MAX_TEXT_LENGTH} символов).", reply_markup=main_keyboard())
         return
     if is_rate_limited(message.from_user.id):
-        bot.send_message(message.chat.id, f"⏳ Пожалуйста, не отправляйте команды так часто. Подождите {RATE_LIMIT_SECONDS} секунд.")
+        bot.send_message(message.chat.id, f"⏳ Пожалуйста, не отправляйте команды так часто. Подождите {RATE_LIMIT_SECONDS} секунд.", reply_markup=main_keyboard())
         return
     bot.send_message(
         message.chat.id,
@@ -153,38 +161,38 @@ def send_welcome(message):
 @bot.message_handler(func=lambda m: m.text == '📈 Статистика игроков')
 def handle_stats_button(message):
     if not message.text:
-        bot.send_message(message.chat.id, "❌ Пожалуйста, выберите действие с помощью текстовой кнопки.")
+        bot.send_message(message.chat.id, "❌ Пожалуйста, выберите действие с помощью текстовой кнопки.", reply_markup=main_keyboard())
         return
     if len(message.text) > MAX_TEXT_LENGTH:
-        bot.send_message(message.chat.id, f"❌ Сообщение слишком длинное (максимум {MAX_TEXT_LENGTH} символов).")
+        bot.send_message(message.chat.id, f"❌ Сообщение слишком длинное (максимум {MAX_TEXT_LENGTH} символов).", reply_markup=main_keyboard())
         return
     if is_rate_limited(message.from_user.id):
-        bot.send_message(message.chat.id, f"⏳ Пожалуйста, не отправляйте запросы так часто. Подождите {RATE_LIMIT_SECONDS} секунд.")
+        bot.send_message(message.chat.id, f"⏳ Пожалуйста, не отправляйте запросы так часто. Подождите {RATE_LIMIT_SECONDS} секунд.", reply_markup=main_keyboard())
         return
     waiting_for_nickname[message.from_user.id] = True
-    msg = bot.send_message(message.chat.id, "Введите никнейм для статистики:")
+    msg = bot.send_message(message.chat.id, "Введите никнейм для статистики:", reply_markup=main_keyboard())
     bot.register_next_step_handler(msg, process_stats_nickname)
 
 def process_stats_nickname(message):
     if not waiting_for_nickname.get(message.from_user.id):
-        bot.send_message(message.chat.id, "❌ Повторите запрос.")
+        bot.send_message(message.chat.id, "❌ Повторите запрос.", reply_markup=main_keyboard())
         return
     waiting_for_nickname[message.from_user.id] = False
     if not message.text:
-        bot.send_message(message.chat.id, "❌ Пожалуйста, отправьте никнейм текстом, а не файлом или другим типом сообщения.")
+        bot.send_message(message.chat.id, "❌ Пожалуйста, отправьте никнейм текстом, а не файлом или другим типом сообщения.", reply_markup=main_keyboard())
         return
     if len(message.text) > MAX_TEXT_LENGTH:
-        bot.send_message(message.chat.id, f"❌ Никнейм слишком длинный (максимум {MAX_TEXT_LENGTH} символов).")
+        bot.send_message(message.chat.id, f"❌ Никнейм слишком длинный (максимум {MAX_TEXT_LENGTH} символов).", reply_markup=main_keyboard())
         return
     if is_rate_limited(message.from_user.id):
-        bot.send_message(message.chat.id, f"⏳ Пожалуйста, не отправляйте запросы так часто. Подождите {RATE_LIMIT_SECONDS} секунд.")
+        bot.send_message(message.chat.id, f"⏳ Пожалуйста, не отправляйте запросы так часто. Подождите {RATE_LIMIT_SECONDS} секунд.", reply_markup=main_keyboard())
         return
     nickname = message.text.strip()
-    msg = bot.send_message(message.chat.id, f"⏳ Получаю статистику для {nickname}...")
+    msg = bot.send_message(message.chat.id, f"⏳ Получаю статистику для {nickname}...", reply_markup=main_keyboard())
     try:
         stats_data = get_cached_stats(nickname)
         if 'Ошибка' in stats_data:
-            bot.send_message(message.chat.id, f"❌ Ошибка: {stats_data['Ошибка']}")
+            bot.send_message(message.chat.id, f"❌ Ошибка: {stats_data['Ошибка']}", reply_markup=main_keyboard())
             return
         html_content = render_stats_html(stats_data)
         screenshot_bytes = take_screenshot(html_content)
@@ -192,24 +200,24 @@ def process_stats_nickname(message):
             tmp.write(screenshot_bytes)
             tmp_path = tmp.name
         with open(tmp_path, 'rb') as img_file:
-            bot.send_photo(message.chat.id, img_file)
+            bot.send_photo(message.chat.id, img_file, reply_markup=main_keyboard())
         os.remove(tmp_path)
     except Exception as e:
-        bot.send_message(message.chat.id, f"❌ Произошла ошибка: {e}")
+        bot.send_message(message.chat.id, f"❌ Произошла ошибка: {e}", reply_markup=main_keyboard())
 
 @bot.message_handler(func=lambda m: m.text == '❓ FAQ')
 def handle_faq(message):
     if not message.text:
-        bot.send_message(message.chat.id, "❌ Пожалуйста, выберите действие с помощью текстовой кнопки.")
+        bot.send_message(message.chat.id, "❌ Пожалуйста, выберите действие с помощью текстовой кнопки.", reply_markup=main_keyboard())
         return
     if len(message.text) > MAX_TEXT_LENGTH:
-        bot.send_message(message.chat.id, f"❌ Сообщение слишком длинное (максимум {MAX_TEXT_LENGTH} символов).")
+        bot.send_message(message.chat.id, f"❌ Сообщение слишком длинное (максимум {MAX_TEXT_LENGTH} символов).", reply_markup=main_keyboard())
         return
     if is_rate_limited(message.from_user.id):
-        bot.send_message(message.chat.id, f"⏳ Пожалуйста, не отправляйте запросы так часто. Подождите {RATE_LIMIT_SECONDS} секунд.")
+        bot.send_message(message.chat.id, f"⏳ Пожалуйста, не отправляйте запросы так часто. Подождите {RATE_LIMIT_SECONDS} секунд.", reply_markup=main_keyboard())
         return
     with open('static/experimental.jpg', 'rb') as photo:
-        bot.send_photo(message.chat.id, photo)
+        bot.send_photo(message.chat.id, photo, reply_markup=main_keyboard())
     bot.send_message(
         message.chat.id,
         "*ВАЖНО* Если у вас проблемы при подключении к серверам с территории РФ - то вам нужно\n"
@@ -229,19 +237,20 @@ def handle_faq(message):
         "Ответ: <a href='https://t.me/iCCupTech/17'>Читайте тут</a>\n\n"
         "Q: Какие есть полезные ссылки?\n"
         "Ответ: <a href='https://t.me/iCCupTech/18'>Читайте тут</a>",
-        parse_mode='HTML'
+        parse_mode='HTML',
+        reply_markup=main_keyboard()
     )
 
 @bot.message_handler(func=lambda m: m.text == '🛠 Техническая поддержка')
 def handle_support(message):
     if not message.text:
-        bot.send_message(message.chat.id, "❌ Пожалуйста, выберите действие с помощью текстовой кнопки.")
+        bot.send_message(message.chat.id, "❌ Пожалуйста, выберите действие с помощью текстовой кнопки.", reply_markup=main_keyboard())
         return
     if len(message.text) > MAX_TEXT_LENGTH:
-        bot.send_message(message.chat.id, f"❌ Сообщение слишком длинное (максимум {MAX_TEXT_LENGTH} символов).")
+        bot.send_message(message.chat.id, f"❌ Сообщение слишком длинное (максимум {MAX_TEXT_LENGTH} символов).", reply_markup=main_keyboard())
         return
     if is_rate_limited(message.from_user.id):
-        bot.send_message(message.chat.id, f"⏳ Пожалуйста, не отправляйте запросы так часто. Подождите {RATE_LIMIT_SECONDS} секунд.")
+        bot.send_message(message.chat.id, f"⏳ Пожалуйста, не отправляйте запросы так часто. Подождите {RATE_LIMIT_SECONDS} секунд.", reply_markup=main_keyboard())
         return
     bot.send_message(
         message.chat.id,
@@ -264,19 +273,20 @@ def handle_support(message):
         "Q. <a href='https://t.me/iCCupTech/32'>Ошибка ввода пароля три раза подряд</a>.\n"
         "Q. <a href='https://t.me/iCCupTech/33'>Ошибки с ACCESS VIOLATION</a>.\n"
         "Q. <a href='https://t.me/iCCupTech/34'>Не работают хоткеи</a>.\n",
-        parse_mode='HTML'
+        parse_mode='HTML',
+        reply_markup=main_keyboard()
     )
 
 @bot.message_handler(func=lambda m: m.text == '🎉 Конкурсы')
 def handle_contests(message):
     if not message.text:
-        bot.send_message(message.chat.id, "❌ Пожалуйста, выберите действие с помощью текстовой кнопки.")
+        bot.send_message(message.chat.id, "❌ Пожалуйста, выберите действие с помощью текстовой кнопки.", reply_markup=main_keyboard())
         return
     if len(message.text) > MAX_TEXT_LENGTH:
-        bot.send_message(message.chat.id, f"❌ Сообщение слишком длинное (максимум {MAX_TEXT_LENGTH} символов).")
+        bot.send_message(message.chat.id, f"❌ Сообщение слишком длинное (максимум {MAX_TEXT_LENGTH} символов).", reply_markup=main_keyboard())
         return
     if is_rate_limited(message.from_user.id):
-        bot.send_message(message.chat.id, f"⏳ Пожалуйста, не отправляйте запросы так часто. Подождите {RATE_LIMIT_SECONDS} секунд.")
+        bot.send_message(message.chat.id, f"⏳ Пожалуйста, не отправляйте запросы так часто. Подождите {RATE_LIMIT_SECONDS} секунд.", reply_markup=main_keyboard())
         return
     bot.send_message(
         message.chat.id,
@@ -298,19 +308,20 @@ def handle_contests(message):
         "Суббота Custom Closed IMBA\n"
         "Воскресенье Custom Closed LOD\n"
         "Время проведения: 19:00 по МСК\n",
-        parse_mode='HTML'
+        parse_mode='HTML',
+        reply_markup=main_keyboard()
     )
 
 @bot.message_handler(func=lambda m: m.text == 'Вакансии')
 def handle_jobs(message):
     if not message.text:
-        bot.send_message(message.chat.id, "❌ Пожалуйста, выберите действие с помощью текстовой кнопки.")
+        bot.send_message(message.chat.id, "❌ Пожалуйста, выберите действие с помощью текстовой кнопки.", reply_markup=main_keyboard())
         return
     if len(message.text) > MAX_TEXT_LENGTH:
-        bot.send_message(message.chat.id, f"❌ Сообщение слишком длинное (максимум {MAX_TEXT_LENGTH} символов).")
+        bot.send_message(message.chat.id, f"❌ Сообщение слишком длинное (максимум {MAX_TEXT_LENGTH} символов).", reply_markup=main_keyboard())
         return
     if is_rate_limited(message.from_user.id):
-        bot.send_message(message.chat.id, f"⏳ Пожалуйста, не отправляйте запросы так часто. Подождите {RATE_LIMIT_SECONDS} секунд.")
+        bot.send_message(message.chat.id, f"⏳ Пожалуйста, не отправляйте запросы так часто. Подождите {RATE_LIMIT_SECONDS} секунд.", reply_markup=main_keyboard())
         return
     bot.send_message(
         message.chat.id,
@@ -340,13 +351,14 @@ def handle_jobs(message):
         "Closed Games Team — Знание карт из списка /chost. Вашей задачей будет проведение закрытых игр для пользователей\n"
         "Custom Forum Team — Порядок нужен везде, в особенности, на форуме\n"
         "Заинтересованы? <a href='https://iccup.com/job_custom_forum'>Мы ждем вас!</a>\n",
-        parse_mode='HTML'
+        parse_mode='HTML',
+        reply_markup=main_keyboard()
     )
 
 @bot.message_handler(func=lambda m: m.text == 'Beta Star Lauchner')
 def handle_beta(message):
     with open('static/launcher.png', 'rb') as photo:
-        bot.send_photo(message.chat.id, photo)
+        bot.send_photo(message.chat.id, photo, reply_markup=main_keyboard())
 
     description = (
         "Это публичная БЕТА версия нового iCCup Star Launcher-a, с помощью которого вы можете войти в свой аккаунт, "
@@ -366,27 +378,27 @@ def handle_beta(message):
         "⚠️ <b>ВНИМАНИЕ: Не нажимайте с мобильных устройств!</b>"
     )
 
-    bot.send_message(message.chat.id, description, parse_mode='HTML')
+    bot.send_message(message.chat.id, description, parse_mode='HTML', reply_markup=main_keyboard())
 
 
 @bot.message_handler(commands=['stats'])
 def stats_command(message):
     if is_rate_limited(message.from_user.id):
-        bot.send_message(message.chat.id, f"⏳ Пожалуйста, не отправляйте запросы так часто. Подождите {RATE_LIMIT_SECONDS} секунд.")
+        bot.send_message(message.chat.id, f"⏳ Пожалуйста, не отправляйте запросы так часто. Подождите {RATE_LIMIT_SECONDS} секунд.", reply_markup=main_keyboard())
         return
     args = message.text.split(maxsplit=1)
     if len(args) < 2 or not args[1].strip():
-        bot.send_message(message.chat.id, "❌ Пожалуйста, укажите никнейм после команды, например: /stats nickname")
+        bot.send_message(message.chat.id, "❌ Пожалуйста, укажите никнейм после команды, например: /stats nickname", reply_markup=main_keyboard())
         return
     nickname = args[1].strip()
     if len(nickname) > MAX_TEXT_LENGTH:
-        bot.send_message(message.chat.id, f"❌ Никнейм слишком длинный (максимум {MAX_TEXT_LENGTH} символов).")
+        bot.send_message(message.chat.id, f"❌ Никнейм слишком длинный (максимум {MAX_TEXT_LENGTH} символов).", reply_markup=main_keyboard())
         return
-    msg = bot.send_message(message.chat.id, f"⏳ Получаю статистику для {nickname}...")
+    msg = bot.send_message(message.chat.id, f"⏳ Получаю статистику для {nickname}...", reply_markup=main_keyboard())
     try:
         stats_data = get_cached_stats(nickname)
         if 'Ошибка' in stats_data:
-            bot.send_message(message.chat.id, f"❌ Ошибка: {stats_data['Ошибка']}")
+            bot.send_message(message.chat.id, f"❌ Ошибка: {stats_data['Ошибка']}", reply_markup=main_keyboard())
             return
         html_content = render_stats_html(stats_data)
         screenshot_bytes = take_screenshot(html_content)
@@ -394,10 +406,10 @@ def stats_command(message):
             tmp.write(screenshot_bytes)
             tmp_path = tmp.name
         with open(tmp_path, 'rb') as img_file:
-            bot.send_photo(message.chat.id, img_file)
+            bot.send_photo(message.chat.id, img_file, reply_markup=main_keyboard())
         os.remove(tmp_path)
     except Exception as e:
-        bot.send_message(message.chat.id, f"❌ Произошла ошибка: {e}")
+        bot.send_message(message.chat.id, f"❌ Произошла ошибка: {e}", reply_markup=main_keyboard())
 
 @bot.message_handler(func=lambda m: m.text in ['❓ FAQ', '🛠 Техническая поддержка', '🎉 Конкурсы', 'Вакансии', '🚀 BETA STAR LAUNCHER', 'Beta Star Lauchner'])
 def reset_context_on_other_buttons(message):
@@ -427,15 +439,17 @@ def auto_post_top_streak():
         moscow_tz = pytz.timezone('Europe/Moscow')
         current_time = datetime.datetime.now(moscow_tz)
         
-
+        # Получаем ник первого игрока
         nickname = fetch_top_streak_player()
         if not nickname:
             return
+        # Получаем статистику игрока
         stats_data = get_cached_stats(nickname)
         if 'Ошибка' in stats_data:
             return
         html_content = render_stats_html(stats_data)
         screenshot_bytes = take_screenshot(html_content)
+        # ID канала/чата для публикации из конфига
         nickname_safe = html.escape(nickname)
         caption = (
         f"🔥🔥ИГРОК ДНЯ🔥🔥\n\n"
@@ -458,20 +472,21 @@ def auto_post_top_streak():
         pass
 
 def make_safe_filename(name):
+    # Оставляем только буквы, цифры, пробел, дефис, подчёркивание, точку, запятую, круглые и квадратные скобки
     import re
     return re.sub(r'[^a-zA-Zа-яА-ЯёЁ0-9 \-_.(),\[\]]+', '', name)
 
 def auto_post_music():
-    print("auto_post_music: запуск задачи")
+    logging.info("auto_post_music: запуск задачи")
     try:
         ytmusic = YTMusic()
-        print("auto_post_music: YTMusic инициализирован")
+        logging.info("auto_post_music: YTMusic инициализирован")
         search_query = random.choice(config.MUSIC_KEYWORDS)
-        print(f"auto_post_music: поисковый запрос: {search_query}")
+        logging.info(f"auto_post_music: поисковый запрос: {search_query}")
         results = ytmusic.search(search_query, filter='songs')
-        print(f"auto_post_music: найдено {len(results)} треков")
+        logging.info(f"auto_post_music: найдено {len(results)} треков")
         if not results:
-            print("auto_post_music: нет результатов")
+            logging.info("auto_post_music: нет результатов")
             return
         top_tracks = results[:10] if len(results) >= 10 else results
         max_duration_sec = 300 
@@ -492,18 +507,18 @@ def auto_post_music():
                 if seconds <= max_duration_sec:
                     filtered_tracks.append(t)
         if not filtered_tracks:
-            print("auto_post_music: нет подходящих треков по длительности")
+            logging.info("auto_post_music: нет подходящих треков по длительности")
             return
         tracks_to_send = random.sample(filtered_tracks, min(3, len(filtered_tracks)))
         media = []
         captions = []
         audio_files = []
-        USE_TEMP_DIR = True  
+        USE_TEMP_DIR = True  # True — использовать временную папку для каждого трека, False — только задержка
         for idx, track in enumerate(tracks_to_send, 1):
-            print(f"auto_post_music: выбран трек {track.get('title')}")
+            logging.info(f"auto_post_music: выбран трек {track.get('title')}")
             video_id = track.get('videoId')
             if not video_id:
-                print("auto_post_music: нет videoId")
+                logging.info("auto_post_music: нет videoId")
                 continue
             url = f"https://music.youtube.com/watch?v={video_id}"
 
@@ -514,7 +529,7 @@ def auto_post_music():
             if USE_TEMP_DIR:
                 import tempfile
                 with tempfile.TemporaryDirectory() as tempdir:
-                    print(f"[LOG] Ожидаемое имя: {pretty_title}.%(ext)s (tempdir: {tempdir})")
+                    logging.info(f"[LOG] Ожидаемое имя: {pretty_title}.%(ext)s (tempdir: {tempdir})")
                     before_files = set(os.listdir(tempdir))
                     try:
                         subprocess.run([
@@ -526,41 +541,42 @@ def auto_post_music():
                             url
                         ], check=True)
                     except Exception as e:
-                        print(f"[LOG] yt-dlp не смог скачать обычный m4a: {e}")
+                        logging.error(f"[LOG] yt-dlp не смог скачать обычный m4a: {e}")
                         continue
                     after_files = set(os.listdir(tempdir))
                     new_files = list(after_files - before_files)
-                    print(f"[LOG] Новые файлы после скачивания: {new_files}")
+                    logging.info(f"[LOG] Новые файлы после скачивания: {new_files}")
                     found_file = None
                     for ext in ('.m4a', '.mp3', '.webm', '.opus'):
                         candidate = os.path.join(tempdir, f"{pretty_title}{ext}")
                         if os.path.exists(candidate):
                             found_file = candidate
-                            print(f"[LOG] Найден файл по шаблону: {found_file}")
+                            logging.info(f"[LOG] Найден файл по шаблону: {found_file}")
                             break
                     if not found_file:
                         for f in new_files:
                             if f.lower().endswith(('.m4a', '.mp3', '.webm', '.opus')):
                                 found_file = os.path.join(tempdir, f)
-                                print(f"[LOG] yt-dlp сохранил файл с другим именем: {found_file}")
+                                logging.info(f"[LOG] yt-dlp сохранил файл с другим именем: {found_file}")
                                 break
                     if not found_file:
-                        print(f"[LOG] аудиофайл не найден после скачивания")
+                        logging.info(f"[LOG] аудиофайл не найден после скачивания")
                         continue
+                    # Переименовываем файл, если имя не совпадает с желаемым
                     desired_file = f"{pretty_title}{os.path.splitext(found_file)[1]}"
                     final_path = os.path.abspath(desired_file)
                     if os.path.abspath(found_file) != final_path:
                         try:
                             shutil.move(found_file, final_path)
-                            print(f"[LOG] Файл перемещён: {found_file} -> {final_path}")
+                            logging.info(f"[LOG] Файл перемещён: {found_file} -> {final_path}")
                             found_file = final_path
                         except Exception as e:
-                            print(f"[LOG] не удалось переместить файл: {e}")
+                            logging.error(f"[LOG] не удалось переместить файл: {e}")
                             continue
                     else:
-                        print(f"[LOG] Файл уже с нужным именем: {found_file}")
+                        logging.info(f"[LOG] Файл уже с нужным именем: {found_file}")
             else:
-                print(f"[LOG] Ожидаемое имя: {pretty_title}.%(ext)s (cwd)")
+                logging.info(f"[LOG] Ожидаемое имя: {pretty_title}.%(ext)s (cwd)")
                 before_files = set(os.listdir('.'))
                 try:
                     subprocess.run([
@@ -572,49 +588,53 @@ def auto_post_music():
                         url
                     ], check=True)
                 except Exception as e:
-                    print(f"[LOG] yt-dlp не смог скачать обычный m4a: {e}")
+                    logging.error(f"[LOG] yt-dlp не смог скачать обычный m4a: {e}")
                     continue
                 after_files = set(os.listdir('.'))
                 new_files = list(after_files - before_files)
-                print(f"[LOG] Новые файлы после скачивания: {new_files}")
+                logging.info(f"[LOG] Новые файлы после скачивания: {new_files}")
                 found_file = None
                 for ext in ('.m4a', '.mp3', '.webm', '.opus'):
                     candidate = f"{pretty_title}{ext}"
                     if os.path.exists(candidate):
                         found_file = candidate
-                        print(f"[LOG] Найден файл по шаблону: {found_file}")
+                        logging.info(f"[LOG] Найден файл по шаблону: {found_file}")
                         break
                 if not found_file:
                     for f in new_files:
                         if f.lower().endswith(('.m4a', '.mp3', '.webm', '.opus')):
                             found_file = f
-                            print(f"[LOG] yt-dlp сохранил файл с другим именем: {found_file}")
+                            logging.info(f"[LOG] yt-dlp сохранил файл с другим именем: {found_file}")
                             break
                 if not found_file:
-                    print(f"[LOG] аудиофайл не найден после скачивания")
+                    logging.info(f"[LOG] аудиофайл не найден после скачивания")
                     continue
                 # Переименовываем файл, если имя не совпадает с желаемым
                 desired_file = f"{pretty_title}{os.path.splitext(found_file)[1]}"
                 if os.path.abspath(found_file) != os.path.abspath(desired_file):
                     try:
                         os.rename(found_file, desired_file)
-                        print(f"[LOG] Файл переименован: {found_file} -> {desired_file}")
+                        logging.info(f"[LOG] Файл переименован: {found_file} -> {desired_file}")
                         found_file = desired_file
                     except Exception as e:
-                        print(f"[LOG] не удалось переименовать файл: {e}")
+                        logging.error(f"[LOG] не удалось переименовать файл: {e}")
                         continue
                 else:
-                    print(f"[LOG] Файл уже с нужным именем: {found_file}")
+                    logging.info(f"[LOG] Файл уже с нужным именем: {found_file}")
                 import time
-                time.sleep(1) 
-            print(f"[LOG] Итоговый файл для отправки: {found_file}")
+                time.sleep(1)  # Задержка между скачиваниями
+            logging.info(f"[LOG] Итоговый файл для отправки: {found_file}")
             audio_files.append(found_file)
             captions.append(f"{track['title']} — {artist}" if artist else track['title'])
 
         if not audio_files:
-            print("auto_post_music: не удалось подготовить ни одного аудиофайла")
+            logging.info("auto_post_music: не удалось подготовить ни одного аудиофайла")
             return
+
+        # Формируем общий caption для первого трека
         full_caption = "Музыка дня!\nСлушаем и тащим катки!\n\nПост создан автоматически\n\n"
+        for idx, cap in enumerate(captions, 1):
+            full_caption += f"#{idx}: {cap}\n\n"
         full_caption += "#Music || #iccup"
 
         from telebot.types import InputMediaAudio
@@ -630,9 +650,9 @@ def auto_post_music():
 
         try:
             bot.send_media_group(AUTOPOST_CHANNEL_ID, media)
-            print("auto_post_music: media_group отправлен успешно")
+            logging.info("auto_post_music: media_group отправлен успешно")
         except Exception as e:
-            print(f'Ошибка отправки media_group: {e}')
+            logging.error(f'Ошибка отправки media_group: {e}')
         finally:
             for fobj in opened_files:
                 try:
@@ -644,17 +664,17 @@ def auto_post_music():
                     try:
                         os.remove(f)
                     except Exception as e:
-                        print(f"[LOG] Не удалось удалить файл {f}: {e}")
+                        logging.error(f"[LOG] Не удалось удалить файл {f}: {e}")
     except Exception as e:
-        print(f'Ошибка автопостинга музыки: {e}')
+        logging.error(f'Ошибка автопостинга музыки: {e}')
 
 
 scheduler = BackgroundScheduler(timezone=pytz.timezone('Europe/Moscow'))
 scheduler.add_job(auto_post_top_streak, 'cron', hour=AUTOPOST_HOUR, minute=AUTOPOST_MINUTE)
 scheduler.add_job(auto_post_music, 'cron', day_of_week=MUSIC_POST_DAYS, hour=MUSIC_POST_HOUR, minute=MUSIC_POST_MINUTE)
 scheduler.start()
-print(f"Планировщик запущен. Музыка будет публиковаться по {MUSIC_POST_DAYS} в {MUSIC_POST_HOUR:02d}:{MUSIC_POST_MINUTE:02d} МСК")
-print(f"Игрок дня будет публиковаться в {AUTOPOST_HOUR:02d}:{AUTOPOST_MINUTE:02d} МСК")
+logging.info(f"Планировщик запущен. Музыка будет публиковаться по {MUSIC_POST_DAYS} в {MUSIC_POST_HOUR:02d}:{MUSIC_POST_MINUTE:02d} МСК")
+logging.info(f"Игрок дня будет публиковаться в {AUTOPOST_HOUR:02d}:{AUTOPOST_MINUTE:02d} МСК")
 
 async def screenshot_iccup_elements(output_path="iccup_screenshot.png"):
     import asyncio
@@ -682,22 +702,25 @@ async def screenshot_iccup_elements(output_path="iccup_screenshot.png"):
                 temp_files.append(temp_file.name)
                 images.append(Image.open(temp_file.name))
             except Exception as e:
-                print(f"[AUTOPOST][ERROR] Не удалось сделать скриншот селектора {selector}: {e}")
+                logging.error(f"[AUTOPOST][ERROR] Не удалось сделать скриншот селектора {selector}: {e}")
+        # Парсим текст лучшего игрока
         try:
             await page.wait_for_selector(player_info_selector, timeout=10000)
             player_info_elem = await page.query_selector(player_info_selector)
             player_info = await player_info_elem.inner_text()
         except Exception as e:
-            print(f"[AUTOPOST][ERROR] Не удалось получить инфо игрока: {e}")
+            logging.error(f"[AUTOPOST][ERROR] Не удалось получить инфо игрока: {e}")
+        # Парсим текст лучшей команды
         try:
             await page.wait_for_selector(team_info_selector, timeout=10000)
             team_info_elem = await page.query_selector(team_info_selector)
             team_info = await team_info_elem.inner_text()
         except Exception as e:
-            print(f"[AUTOPOST][ERROR] Не удалось получить инфо команды: {e}")
+            logging.error(f"[AUTOPOST][ERROR] Не удалось получить инфо команды: {e}")
         await browser.close()
     if not images:
         raise Exception("Не удалось получить ни одного скриншота с iccup.com")
+    # Склеиваем изображения горизонтально
     total_width = sum(img.width for img in images)
     max_height = max(img.height for img in images)
     combined = Image.new('RGB', (total_width, max_height), (255, 255, 255))
@@ -706,6 +729,7 @@ async def screenshot_iccup_elements(output_path="iccup_screenshot.png"):
         combined.paste(img, (x_offset, 0))
         x_offset += img.width
     combined.save(output_path)
+    # Удаляем временные файлы
     for f in temp_files:
         try:
             os.remove(f)
@@ -716,8 +740,10 @@ async def screenshot_iccup_elements(output_path="iccup_screenshot.png"):
 import re
 
 def parse_player_team_info(text):
+    # Пример строки: "NickName Победы: 10 | Поражения: 2"
     if not text:
         return None, None, None
+    # Ищем никнейм/название (до Победы:)
     m = re.match(r"(.+?) Победы: (\d+) \| Поражения: (\d+)", text)
     if m:
         name = m.group(1).strip()
@@ -731,7 +757,7 @@ async def autopost_iccup_screenshot(bot):
     posted_times = set()
     while True:
         now = datetime.datetime.now(pytz.timezone('Europe/Moscow'))
-        now_day = now.strftime("%a").lower() 
+        now_day = now.strftime("%a").lower()  # 'mon', 'tue', ...
         now_hour = now.hour
         now_minute = now.minute
         for sched in config.AUTOPOST_SCHEDULE:
@@ -744,6 +770,7 @@ async def autopost_iccup_screenshot(bot):
                     screenshot_path, player_info, team_info = await screenshot_iccup_elements()
                     player_name, player_wins, player_losses = parse_player_team_info(player_info)
                     team_name, team_wins, team_losses = parse_player_team_info(team_info)
+                    # Формируем caption по шаблону пользователя с учётом условий (без ссылки)
                     caption = (
                         "🔥 Итоги недели на ICCup! 🔥\n"
                         "Каждую неделю мы подводим итоги и чествуем лучших - тех, кто показал максимум скилла и не побоялся бросить вызов топам!\n\n"
