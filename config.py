@@ -15,7 +15,7 @@ RATE_LIMIT_SECONDS = 1
 
 # Ключевые слова для поиска музыки
 MUSIC_KEYWORDS = [
-    "underground rap",
+   "underground rap",
     "drill",
     "trap beat",
     "russian rap",
@@ -29,17 +29,9 @@ MUSIC_KEYWORDS = [
     "rnb soul",
     "90s rnb",
     "trap soul",
-    "bedroom rnb",
     "rnb vibes",
-    "emotional rnb",
-    "alternative rock",
-    "post rock",
-    "emotional rock",
-    "grunge",
     "punk rock",
-    "indie rock",
     "rock rap",
-    "nu metal",
 ]
 
 
